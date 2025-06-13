@@ -1,75 +1,51 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request
+from twilio.twiml.messaging_response import MessagingResponse
 import openai
-import requests
 import os
 
 app = Flask(__name__)
 
-openai.api_key = os.environ.get("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")
-D360_API_KEY = os.environ.get("cfBAd3_sandbox")
-D360_SEND_URL = "https://waba-sandbox.360dialog.io/v1/messages"
+# Gunakan environment variable di Railway untuk keamanan
+openai.api_key = os.environ.get("OPENAI_API_KEY")
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Webhook aktif!", 200
+    return "Webhook aktif untuk Twilio WhatsApp ✅", 200
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-   if request.content_type == "application/json":
-        # Untuk 360dialog (kamu sudah buat ini)
-        data = request.get_json()
-        try:
-            message = data["messages"][0]["text"]["body"]
-            sender = data["messages"][0]["from"]
-        except Exception as e:
-            print("Gagal parsing dari 360dialog:", e)
-            return jsonify({"error": "Invalid 360dialog payload"}), 400
+    # Ambil data dari form (karena Twilio kirim sebagai x-www-form-urlencoded)
+    incoming_msg = request.form.get("Body")
+    sender = request.form.get("From")
 
-    elif request.content_type == "application/x-www-form-urlencoded":
-        # Untuk Twilio
-        try:
-            message = request.form.get("Body")
-            sender = request.form.get("From")
-            print(f"Pesan dari {sender}: {message}")
-        except Exception as e:
-            print("Gagal parsing dari Twilio:", e)
-            return jsonify({"error": "Invalid Twilio payload"}), 400
-    else:
-        return jsonify({"error": "Unsupported Content-Type"}), 415
+    print(f"Pesan masuk dari {sender}: {incoming_msg}")
 
-    # Proses GPT seperti biasa
+    # Respons default kalau terjadi error
+    response_text = "Maaf, terjadi kesalahan. Coba lagi ya."
+
     try:
+        # Panggil OpenAI GPT
         completion = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "Kamu adalah chatbot pelayanan ketenagakerjaan. Jawablah ringkas, ramah, dan sopan."},
-                {"role": "user", "content": message}
+                {
+                    "role": "system",
+                    "content": "Kamu adalah chatbot pelayanan ketenagakerjaan. Jawablah singkat, ramah, dan sopan.",
+                },
+                {"role": "user", "content": incoming_msg},
             ]
         )
-        response = completion.choices[0].message.content.strip()
-
-        # Balas ke Twilio (pakai TwiML) atau 360dialog (pakai POST)
-        if "twilio" in request.form.get("ApiVersion", "").lower() or "whatsapp" in sender.lower():
-            from twilio.twiml.messaging_response import MessagingResponse
-            twiml = MessagingResponse()
-            twiml.message(response)
-            return str(twiml), 200, {'Content-Type': 'application/xml'}
-
-        else:
-            # Default: kirim ke 360dialog
-            headers = {
-                "D360-API-KEY": D360_API_KEY,
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "recipient_type": "individual",
-                "to": sender,
-                "type": "text",
-                "text": {"body": response}
-            }
-            requests.post(D360_SEND_URL, headers=headers, json=payload)
-            return jsonify({"status": "ok"}), 200
-
+        response_text = completion.choices[0].message.content.strip()
     except Exception as e:
-        print("Error GPT atau pengiriman:", e)
-        return jsonify({"error": str(e)}), 500
+        print("Error saat memanggil OpenAI:", e)
+
+    # Buat Twilio MessagingResponse
+    twiml = MessagingResponse()
+    twiml.message(response_text)
+
+    return str(twiml), 200, {"Content-Type": "application/xml"}
+
+# Untuk Railway
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=False, host="0.0.0.0", port=port)
