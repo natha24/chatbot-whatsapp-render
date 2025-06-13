@@ -1,6 +1,21 @@
+from flask import Flask, request, jsonify
+import openai
+import requests
+import os
+
+app = Flask(__name__)
+
+openai.api_key = os.environ.get("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")
+D360_API_KEY = os.environ.get("cfBAd3_sandbox")
+D360_SEND_URL = "https://waba-sandbox.360dialog.io/v1/messages"
+
+@app.route("/", methods=["GET"])
+def home():
+    return "Webhook aktif!", 200
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    if request.content_type == "application/json":
+   if request.content_type == "application/json":
         # Untuk 360dialog (kamu sudah buat ini)
         data = request.get_json()
         try:
