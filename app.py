@@ -1,46 +1,44 @@
-from flask import Flask, request, jsonify
-from openai import OpenAI
+from flask import Flask, request
+import openai
 import os
+from twilio.twiml.messaging_response import MessagingResponse
 
 app = Flask(__name__)
 
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-TWILIO_SEND_BACK = False  # Ubah ke True jika ingin membalas langsung via Twilio
+openai.api_key = os.environ.get("OPENAI_API_KEY")  # simpan di Railway
 
 @app.route("/", methods=["GET"])
-def home():
+def index():
     return "Webhook aktif!", 200
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
-        message = request.form.get("Body")
+        # Ambil isi pesan dari request POST Twilio
+        incoming_msg = request.form.get("Body")
         sender = request.form.get("From")
 
-        print("Pesan:", message)
-        print("Dari:", sender)
-
-        if not message or not sender:
-            return jsonify({"status": "ignored"}), 200
-
-        completion = client.chat.completions.create(
+        # Panggil OpenAI untuk menjawab
+        completion = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "Kamu adalah chatbot pelayanan ketenagakerjaan. Jawablah ringkas, ramah, dan sopan."},
-                {"role": "user", "content": message}
+                {"role": "system", "content": "Kamu adalah asisten pelayanan ketenagakerjaan. Jawab pertanyaan dengan singkat, ramah, dan informatif."},
+                {"role": "user", "content": incoming_msg}
             ]
         )
-        response = completion.choices[0].message.content.strip()
-        print("Balasan:", response)
+        response_text = completion.choices[0].message.content.strip()
 
-        # Jika ingin balas ke Twilio, tambahkan logika di sini
-        return response, 200
+        # Balas ke Twilio (otomatis kirim balik ke pengirim)
+        twilio_resp = MessagingResponse()
+        twilio_resp.message(response_text)
+
+        return str(twilio_resp)
 
     except Exception as e:
         print("Terjadi error:", e)
+        return "Error", 500
 
-    return jsonify({"status": "ok"}), 200
-
+# Jalankan di Railway
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(debug=False, host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port)
