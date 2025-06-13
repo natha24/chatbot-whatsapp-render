@@ -1,44 +1,48 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 import openai
 import os
-from twilio.twiml.messaging_response import MessagingResponse
 
 app = Flask(__name__)
 
-openai.api_key = os.environ.get("OPENAI_API_KEY")  # simpan di Railway
+# Gunakan variabel lingkungan untuk kunci API
+openai.api_key = os.environ.get("OPENAI_API_KEY")
 
 @app.route("/", methods=["GET"])
-def index():
+def home():
     return "Webhook aktif!", 200
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
-        # Ambil isi pesan dari request POST Twilio
-        incoming_msg = request.form.get("Body")
+        message = request.form.get("Body")
         sender = request.form.get("From")
 
-        # Panggil OpenAI untuk menjawab
-        completion = openai.ChatCompletion.create(
+        print(f"Pesan: {message}")
+        print(f"Dari: {sender}")
+
+        # Format baru OpenAI API (>=1.0.0)
+        client = openai.OpenAI()
+        chat_response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "Kamu adalah asisten pelayanan ketenagakerjaan. Jawab pertanyaan dengan singkat, ramah, dan informatif."},
-                {"role": "user", "content": incoming_msg}
+                {"role": "system", "content": "Kamu adalah chatbot pelayanan ketenagakerjaan. Jawablah singkat, ramah, dan sopan."},
+                {"role": "user", "content": message}
             ]
         )
-        response_text = completion.choices[0].message.content.strip()
 
-        # Balas ke Twilio (otomatis kirim balik ke pengirim)
-        twilio_resp = MessagingResponse()
-        twilio_resp.message(response_text)
+        reply = chat_response.choices[0].message.content.strip()
 
-        return str(twilio_resp)
+        # Balas pesan ke Twilio
+        from twilio.twiml.messaging_response import MessagingResponse
+        response = MessagingResponse()
+        response.message(reply)
+        return str(response)
 
     except Exception as e:
         print("Terjadi error:", e)
-        return "Error", 500
+        return jsonify({"error": str(e)}), 500
 
-# Jalankan di Railway
+# Untuk Railway
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
